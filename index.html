@@ -837,10 +837,10 @@ function initSlider() {
   const input = document.getElementById('voltInput');
 
   function setSliderValue(pct) {
-    pct = Math.max(0, Math.min(100, pct));
+    pct = Math.round(Math.max(0, Math.min(100, pct)));
     fill.style.width = pct + '%';
     thumb.style.left = pct + '%';
-    input.value = pct.toFixed(1);
+    input.value = pct;
     // live calculate
     const r = interpolateBySoc(pct / 100);
     updateDisplay(r.v, pct, capToRange(r.cap));
