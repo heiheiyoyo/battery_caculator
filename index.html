@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>东磁21700-50E · 电池状态计算器</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+SC:wght@300;400;500&display=swap" rel="stylesheet">
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#050a14">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="电池计算器">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #050a14;
+    --surface: #0d1624;
+    --card: #111d2e;
+    --border: #1e3a5f;
+    --accent: #00d4ff;
+    --accent2: #39ff8f;
+    --accent3: #ff6b35;
+    --text: #e0f0ff;
+    --muted: #4a7a9b;
+    --glow: 0 0 20px rgba(0,212,255,0.3);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Sans SC', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Animated grid background */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 20px;
+    position: relative; z-index: 1;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  .brand {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    letter-spacing: 6px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(22px, 4vw, 38px);
+    font-weight: 900;
+    background: linear-gradient(135deg, #fff 0%, var(--accent) 50%, var(--accent2) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1.2;
+    margin-bottom: 8px;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 13px;
+    letter-spacing: 2px;
+  }
+
+  .main-grid {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+
+  @media (max-width: 800px) {
+    .main-grid { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  }
+
+  .section-label {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px;
+    letter-spacing: 4px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+
+  /* Tab switcher */
+  .tab-switcher {
+    display: flex;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 4px;
+    margin-bottom: 20px;
+    position: relative;
+  }
+
+  .tab-slider {
+    position: absolute;
+    top: 4px; bottom: 4px;
+    width: calc(50% - 4px);
+    background: linear-gradient(135deg, var(--accent), #0099bb);
+    border-radius: 7px;
+    transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+    left: 4px;
+  }
+
+  .tab-switcher.tab-cell .tab-slider {
+    transform: translateX(calc(100% + 0px));
+  }
+
+  .tab-btn {
+    flex: 1;
+    padding: 10px 8px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--muted);
+    position: relative;
+    z-index: 1;
+    transition: color 0.3s;
+    border-radius: 7px;
+  }
+
+  .tab-btn.active { color: var(--bg); font-weight: 700; }
+
+  /* Input */
+  .input-wrap {
+    position: relative;
+    margin-bottom: 6px;
+  }
+
+  .input-unit {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px;
+    color: var(--muted);
+    pointer-events: none;
+  }
+
+  .input-hint {
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 16px;
+    letter-spacing: 0.5px;
+  }
+
+  input[type="number"] {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 52px 16px 20px;
+    color: var(--text);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 22px;
+    outline: none;
+    transition: border-color 0.3s, box-shadow 0.3s;
+    -moz-appearance: textfield;
+  }
+
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+  input[type="number"]:focus {
+    border-color: var(--accent);
+    box-shadow: var(--glow);
+  }
+
+  .btn-calc {
+    width: 100%;
+    padding: 16px;
+    background: linear-gradient(135deg, var(--accent), #0099bb);
+    border: none;
+    border-radius: 8px;
+    color: var(--bg);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    margin-top: 8px;
+  }
+
+  .btn-calc:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0,212,255,0.4);
+  }
+
+  /* Battery Animation */
+  .battery-section {
+    margin-top: 28px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .battery-wrap {
+    position: relative;
+    width: 120px;
+  }
+
+  .battery-body {
+    width: 120px;
+    height: 56px;
+    border: 3px solid var(--accent);
+    border-radius: 8px;
+    position: relative;
+    box-shadow: var(--glow);
+    overflow: hidden;
+  }
+
+  .battery-tip {
+    position: absolute;
+    right: -12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 10px;
+    height: 22px;
+    background: var(--accent);
+    border-radius: 0 4px 4px 0;
+  }
+
+  .battery-fill {
+    position: absolute;
+    left: 0; bottom: 0; top: 0;
+    width: 0%;
+    background: linear-gradient(90deg, var(--accent2), #00cc6a);
+    transition: width 1.2s cubic-bezier(0.4,0,0.2,1);
+    border-radius: 4px 0 0 4px;
+  }
+
+  .battery-fill.low { background: linear-gradient(90deg, #ff3b30, var(--accent3)); }
+  .battery-fill.mid { background: linear-gradient(90deg, #ffcc00, #ff9500); }
+
+  .battery-shimmer {
+    position: absolute;
+    top: 0; left: -100%; right: 0; bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    animation: shimmer 2s infinite;
+  }
+
+  @keyframes shimmer {
+    0% { left: -100%; }
+    100% { left: 200%; }
+  }
+
+  .battery-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 0 10px rgba(0,0,0,0.8);
+    z-index: 2;
+  }
+
+  .battery-bolts {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 3;
+    opacity: 0;
+    transition: opacity 0.5s;
+  }
+
+  .battery-bolts.show { opacity: 1; }
+
+  .bolt {
+    width: 4px;
+    height: 4px;
+    background: #fff;
+    border-radius: 50%;
+    margin: 0 3px;
+    animation: blink 0.8s infinite alternate;
+  }
+  .bolt:nth-child(2) { animation-delay: 0.3s; }
+  .bolt:nth-child(3) { animation-delay: 0.6s; }
+
+  @keyframes blink {
+    from { opacity: 0.2; transform: scale(0.8); }
+    to { opacity: 1; transform: scale(1.4); }
+  }
+
+  /* Results */
+  .results-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 4px;
+  }
+
+  .result-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+
+  .result-item.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 15px rgba(0,212,255,0.15);
+  }
+
+  .result-label {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+
+  .result-value {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .result-value.green { color: var(--accent2); }
+  .result-value.orange { color: var(--accent3); }
+
+  .result-unit {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* Chart card */
+  .chart-card {
+    min-height: 420px;
+  }
+
+  .chart-container {
+    position: relative;
+    height: 360px;
+  }
+
+  /* Spec info */
+  .spec-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .spec-tag {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .spec-tag span {
+    color: var(--accent);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 12px;
+  }
+
+  .error-msg {
+    color: var(--accent3);
+    font-size: 12px;
+    margin-top: 8px;
+    min-height: 18px;
+  }
+
+  .pulse-ring {
+    position: absolute;
+    inset: -3px;
+    border-radius: 11px;
+    border: 2px solid var(--accent);
+    opacity: 0;
+    animation: pulse-ring 2s infinite;
+  }
+
+  @keyframes pulse-ring {
+    0% { opacity: 0.6; transform: scale(1); }
+    100% { opacity: 0; transform: scale(1.05); }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="brand">东磁 · SINOMAG · 21700-50E</div>
+    <h1>电池状态计算器</h1>
+    <div class="subtitle">48V 35Ah · 13串三元锂 · 插值法实时解算</div>
+  </header>
+
+  <div class="spec-bar">
+    <div class="spec-tag">充电截止 <span>54.6V</span></div>
+    <div class="spec-tag">放电截止 <span>36.4V</span></div>
+    <div class="spec-tag">单体满电 <span>4.2V</span></div>
+    <div class="spec-tag">单体截止 <span>2.8V</span></div>
+    <div class="spec-tag">满速续航 <span>≈55km</span></div>
+  </div>
+
+  <div class="main-grid">
+    <!-- Left Panel: Input + Battery -->
+    <div>
+      <div class="card">
+        <div class="section-label">输入电压</div>
+
+        <!-- Tab switcher -->
+        <div class="tab-switcher" id="tabSwitcher">
+          <div class="tab-slider"></div>
+          <button class="tab-btn active" id="tabTotal" onclick="switchTab('total')">总　电　压</button>
+          <button class="tab-btn" id="tabCell" onclick="switchTab('cell')">单 体 电 压</button>
+        </div>
+
+        <!-- Single unified input -->
+        <div class="input-wrap">
+          <input type="number" id="voltInput" placeholder="输入电压值" step="0.01">
+          <span class="input-unit" id="inputUnit">V</span>
+        </div>
+        <div class="input-hint" id="inputHint">范围：36.4 ~ 54.6 V（13串总电压）</div>
+
+        <div class="error-msg" id="errorMsg"></div>
+        <button class="btn-calc" onclick="calculate()">CALCULATE</button>
+
+        <!-- Battery Animation -->
+        <div class="battery-section">
+          <div class="battery-wrap">
+            <div class="pulse-ring" id="pulseRing"></div>
+            <div class="battery-body">
+              <div class="battery-fill" id="battFill"></div>
+              <div class="battery-shimmer"></div>
+              <div class="battery-text" id="battText">--</div>
+              <div class="battery-bolts" id="battBolts">
+                <div class="bolt"></div>
+                <div class="bolt"></div>
+                <div class="bolt"></div>
+              </div>
+            </div>
+            <div class="battery-tip"></div>
+          </div>
+        </div>
+
+        <!-- Results -->
+        <div class="results-grid" style="margin-top:20px">
+          <div class="result-item" id="r-soc">
+            <div class="result-label">SOC 荷电状态</div>
+            <div class="result-value" id="v-soc">--</div>
+            <div class="result-unit">%</div>
+          </div>
+          <div class="result-item" id="r-range">
+            <div class="result-label">剩余续航</div>
+            <div class="result-value green" id="v-range">--</div>
+            <div class="result-unit">km</div>
+          </div>
+          <div class="result-item" id="r-cell">
+            <div class="result-label">单体电压</div>
+            <div class="result-value orange" id="v-cell">--</div>
+            <div class="result-unit">V</div>
+          </div>
+          <div class="result-item" id="r-total">
+            <div class="result-label">总电压</div>
+            <div class="result-value orange" id="v-total">--</div>
+            <div class="result-unit">V</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Panel: Chart -->
+    <div class="card chart-card">
+      <div class="section-label">电压 · SOC · 剩余续航 曲线</div>
+      <div class="chart-container">
+        <canvas id="myChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Raw data
+const rawData = [
+  {v: 4.19, soc: 1,        cap: 4817},
+  {v: 4.12, soc: 0.985261, cap: 4746},
+  {v: 4.02, soc: 0.838281, cap: 4038},
+  {v: 3.92, soc: 0.720573, cap: 3471},
+  {v: 3.87, soc: 0.647083, cap: 3117},
+  {v: 3.82, soc: 0.602865, cap: 2904},
+  {v: 3.77, soc: 0.529375, cap: 2550},
+  {v: 3.72, soc: 0.485364, cap: 2338},
+  {v: 3.67, soc: 0.455885, cap: 2196},
+  {v: 3.62, soc: 0.411667, cap: 1983},
+  {v: 3.57, soc: 0.382396, cap: 1842},
+  {v: 3.52, soc: 0.308906, cap: 1488},
+  {v: 3.42, soc: 0.235416, cap: 1134},
+  {v: 3.32, soc: 0.161719, cap:  779},
+  {v: 3.22, soc: 0.132448, cap:  638},
+  {v: 3.12, soc: 0.07349,  cap:  354},
+  {v: 3.02, soc: 0.044218, cap:  213},
+  {v: 2.92, soc: 0.014739, cap:   71},
+  {v: 2.82, soc: 0,        cap:    0},
+];
+
+const TOTAL_RANGE = 55;     // km
+const MAX_CAP = 4817;       // mAh
+const S = 13;               // series
+const CELL_MIN = 2.8;
+const CELL_MAX = 4.2;       // ≈ 4.19 rounded
+
+// Linear interpolation by cell voltage
+function interpolate(cellV) {
+  if (cellV >= rawData[0].v) return {...rawData[0]};
+  if (cellV <= rawData[rawData.length-1].v) return {...rawData[rawData.length-1]};
+  for (let i = 0; i < rawData.length - 1; i++) {
+    const a = rawData[i], b = rawData[i+1];
+    if (cellV <= a.v && cellV >= b.v) {
+      const t = (cellV - a.v) / (b.v - a.v);
+      return {
+        v: cellV,
+        soc: a.soc + t * (b.soc - a.soc),
+        cap: a.cap + t * (b.cap - a.cap),
+      };
+    }
+  }
+}
+
+function capToRange(cap) {
+  return (cap / MAX_CAP) * TOTAL_RANGE;
+}
+
+// Build chart data (dense interpolation)
+const chartVoltages = [];
+const chartSOC = [];
+const chartRange = [];
+for (let v = 4.19; v >= 2.82; v -= 0.01) {
+  const r = interpolate(Math.round(v * 1000)/1000);
+  chartVoltages.push(+v.toFixed(2));
+  chartSOC.push(+(r.soc * 100).toFixed(2));
+  chartRange.push(+capToRange(r.cap).toFixed(2));
+}
+
+// Chart.js
+const ctx = document.getElementById('myChart').getContext('2d');
+const myChart = new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: chartVoltages,
+    datasets: [
+      {
+        label: 'SOC (%)',
+        data: chartSOC,
+        yAxisID: 'y1',
+        borderColor: '#00d4ff',
+        backgroundColor: 'rgba(0,212,255,0.08)',
+        borderWidth: 2,
+        pointRadius: 0,
+        fill: true,
+        tension: 0.4,
+      },
+      {
+        label: '剩余续航 (km)',
+        data: chartRange,
+        yAxisID: 'y2',
+        borderColor: '#39ff8f',
+        backgroundColor: 'rgba(57,255,143,0.05)',
+        borderWidth: 2,
+        pointRadius: 0,
+        fill: false,
+        tension: 0.4,
+        borderDash: [6,3],
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: {
+        labels: {
+          color: '#4a7a9b',
+          font: { family: 'Noto Sans SC', size: 12 },
+          boxWidth: 24,
+        }
+      },
+      tooltip: {
+        backgroundColor: '#0d1624',
+        borderColor: '#1e3a5f',
+        borderWidth: 1,
+        titleColor: '#00d4ff',
+        bodyColor: '#e0f0ff',
+        callbacks: {
+          title: ctx => `单体电压: ${ctx[0].label}V`
+        }
+      }
+    },
+    scales: {
+      x: {
+        reverse: false,
+        title: { display: true, text: '单体电压 (V)', color: '#4a7a9b', font: { family: 'Noto Sans SC' } },
+        ticks: {
+          color: '#4a7a9b',
+          maxTicksLimit: 10,
+          callback: v => chartVoltages[v] ? chartVoltages[v]+'V' : '',
+        },
+        grid: { color: 'rgba(30,58,95,0.4)' },
+      },
+      y1: {
+        type: 'linear', position: 'left',
+        min: 0, max: 100,
+        title: { display: true, text: 'SOC (%)', color: '#00d4ff', font: { family: 'Noto Sans SC' } },
+        ticks: { color: '#00d4ff', callback: v => v+'%' },
+        grid: { color: 'rgba(30,58,95,0.4)' },
+      },
+      y2: {
+        type: 'linear', position: 'right',
+        min: 0, max: 60,
+        title: { display: true, text: '续航 (km)', color: '#39ff8f', font: { family: 'Noto Sans SC' } },
+        ticks: { color: '#39ff8f', callback: v => v+'km' },
+        grid: { drawOnChartArea: false },
+      }
+    }
+  }
+});
+
+// Vertical line annotation on chart (manual with plugin)
+let markerLine = null;
+
+function addMarkerToChart(cellV) {
+  // Find closest index
+  const idx = chartVoltages.findIndex(v => v <= cellV);
+  if (idx < 0) return;
+  // Update datasets with point highlight
+  myChart.data.datasets[0].pointRadius = chartVoltages.map((v,i) => i === idx ? 6 : 0);
+  myChart.data.datasets[1].pointRadius = chartVoltages.map((v,i) => i === idx ? 6 : 0);
+  myChart.data.datasets[0].pointBackgroundColor = chartVoltages.map((v,i) => i === idx ? '#00d4ff' : 'transparent');
+  myChart.data.datasets[1].pointBackgroundColor = chartVoltages.map((v,i) => i === idx ? '#39ff8f' : 'transparent');
+  myChart.update('none');
+}
+
+// Tab state
+let currentTab = 'total'; // 'total' or 'cell'
+
+function switchTab(tab) {
+  currentTab = tab;
+  const switcher = document.getElementById('tabSwitcher');
+  const hint = document.getElementById('inputHint');
+  const unit = document.getElementById('inputUnit');
+  const input = document.getElementById('voltInput');
+  const btnTotal = document.getElementById('tabTotal');
+  const btnCell = document.getElementById('tabCell');
+
+  input.value = '';
+  document.getElementById('errorMsg').textContent = '';
+
+  if (tab === 'total') {
+    switcher.classList.remove('tab-cell');
+    btnTotal.classList.add('active');
+    btnCell.classList.remove('active');
+    input.placeholder = '如 46.80';
+    input.step = '0.01';
+    hint.textContent = '范围：36.4 ~ 54.6 V（13串总电压）';
+    unit.textContent = 'V';
+  } else {
+    switcher.classList.add('tab-cell');
+    btnCell.classList.add('active');
+    btnTotal.classList.remove('active');
+    input.placeholder = '如 3.600';
+    input.step = '0.001';
+    hint.textContent = '范围：2.8 ~ 4.2 V（单节电芯电压）';
+    unit.textContent = 'V';
+  }
+  input.focus();
+}
+
+function calculate() {
+  const errEl = document.getElementById('errorMsg');
+  errEl.textContent = '';
+
+  const raw = parseFloat(document.getElementById('voltInput').value);
+  if (isNaN(raw)) {
+    errEl.textContent = '请输入电压值';
+    return;
+  }
+
+  let cellV, totalV;
+  if (currentTab === 'total') {
+    totalV = raw;
+    cellV = raw / S;
+  } else {
+    cellV = raw;
+    totalV = raw * S;
+  }
+
+  if (cellV < 2.8 || cellV > 4.25) {
+    errEl.textContent = `单体电压 ${cellV.toFixed(3)}V 超出范围 [2.8V ~ 4.2V]`;
+    return;
+  }
+
+  const r = interpolate(cellV);
+  const soc = r.soc * 100;
+  const range = capToRange(r.cap);
+
+  document.getElementById('v-soc').textContent = soc.toFixed(1);
+  document.getElementById('v-range').textContent = range.toFixed(1);
+  document.getElementById('v-cell').textContent = cellV.toFixed(3);
+  document.getElementById('v-total').textContent = (cellV * S).toFixed(2);
+
+  ['r-soc','r-range','r-cell','r-total'].forEach(id => {
+    document.getElementById(id).classList.add('active');
+  });
+
+  // Battery animation
+  const fill = document.getElementById('battFill');
+  const battText = document.getElementById('battText');
+  const bolts = document.getElementById('battBolts');
+
+  fill.className = 'battery-fill';
+  if (soc < 20) fill.classList.add('low');
+  else if (soc < 50) fill.classList.add('mid');
+
+  fill.style.width = Math.max(soc, 2) + '%';
+  battText.textContent = soc.toFixed(0) + '%';
+
+  // Show bolts when high SOC
+  if (soc > 80) bolts.classList.add('show');
+  else bolts.classList.remove('show');
+
+  addMarkerToChart(cellV);
+}
+
+// Allow Enter key
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') calculate();
+});
+</script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js')
+        .then(reg => console.log('SW registered', reg.scope))
+        .catch(err => console.log('SW error', err));
+    });
+  }
+</script>
+</body>
+</html>
