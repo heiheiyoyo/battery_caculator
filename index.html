@@ -141,26 +141,30 @@
   .tab-slider {
     position: absolute;
     top: 4px; bottom: 4px;
-    width: calc(50% - 4px);
+    width: calc(33.333% - 4px);
     background: linear-gradient(135deg, var(--accent), #0099bb);
     border-radius: 7px;
-    transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+    transition: transform 0.35s cubic-bezier(0.4,0,0.2,1);
     left: 4px;
   }
 
   .tab-switcher.tab-cell .tab-slider {
-    transform: translateX(calc(100% + 0px));
+    transform: translateX(calc(100% + 2px));
+  }
+
+  .tab-switcher.tab-soc .tab-slider {
+    transform: translateX(calc(200% + 4px));
   }
 
   .tab-btn {
     flex: 1;
-    padding: 10px 8px;
+    padding: 10px 4px;
     background: none;
     border: none;
     cursor: pointer;
     font-family: 'Orbitron', sans-serif;
-    font-size: 11px;
-    letter-spacing: 1px;
+    font-size: 10px;
+    letter-spacing: 0.5px;
     color: var(--muted);
     position: relative;
     z-index: 1;
@@ -192,6 +196,66 @@
     color: var(--muted);
     margin-bottom: 16px;
     letter-spacing: 0.5px;
+  }
+
+  /* SOC slider */
+  .soc-slider-wrap {
+    display: none;
+    margin-bottom: 16px;
+  }
+
+  .tab-switcher.tab-soc ~ * .soc-slider-wrap,
+  .soc-slider-wrap.visible {
+    display: block;
+  }
+
+  .soc-slider-track {
+    position: relative;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    margin: 10px 0 20px;
+    cursor: pointer;
+  }
+
+  .soc-slider-fill {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    background: linear-gradient(90deg, var(--accent3), #ffcc00, var(--accent2));
+    border-radius: 3px;
+    width: 75%;
+    transition: width 0.05s;
+    pointer-events: none;
+  }
+
+  .soc-slider-thumb {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 22px;
+    height: 22px;
+    background: var(--card);
+    border: 3px solid var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 10px rgba(0,212,255,0.5);
+    cursor: grab;
+    transition: box-shadow 0.2s, transform 0.1s;
+    left: 75%;
+  }
+
+  .soc-slider-thumb:active {
+    cursor: grabbing;
+    transform: translate(-50%, -50%) scale(1.2);
+    box-shadow: 0 0 18px rgba(0,212,255,0.8);
+  }
+
+  .soc-slider-labels {
+    display: flex;
+    justify-content: space-between;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: -14px;
   }
 
   input[type="number"] {
@@ -466,8 +530,9 @@
         <!-- Tab switcher -->
         <div class="tab-switcher" id="tabSwitcher">
           <div class="tab-slider"></div>
-          <button class="tab-btn active" id="tabTotal" onclick="switchTab('total')">总　电　压</button>
-          <button class="tab-btn" id="tabCell" onclick="switchTab('cell')">单 体 电 压</button>
+          <button class="tab-btn active" id="tabTotal" onclick="switchTab('total')">总电压</button>
+          <button class="tab-btn" id="tabCell" onclick="switchTab('cell')">单体电压</button>
+          <button class="tab-btn" id="tabSoc" onclick="switchTab('soc')">SOC</button>
         </div>
 
         <!-- Single unified input -->
@@ -476,6 +541,15 @@
           <span class="input-unit" id="inputUnit">V</span>
         </div>
         <div class="input-hint" id="inputHint">范围：36.4 ~ 54.6 V（13串总电压）</div>
+
+        <!-- SOC slider (only shown in SOC tab) -->
+        <div class="soc-slider-wrap" id="socSliderWrap">
+          <div class="soc-slider-track" id="sliderTrack">
+            <div class="soc-slider-fill" id="sliderFill"></div>
+            <div class="soc-slider-thumb" id="sliderThumb"></div>
+          </div>
+          <div class="soc-slider-labels"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>
+        </div>
 
         <div class="error-msg" id="errorMsg"></div>
         <button class="btn-calc" onclick="calculate()">CALCULATE</button>
@@ -695,8 +769,26 @@ function addMarkerToChart(cellV) {
   myChart.update('none');
 }
 
+// Inverse interpolation: SOC (0~1) → cell voltage
+function interpolateBySoc(socVal) {
+  // socVal is 0..1
+  if (socVal >= rawData[0].soc) return {...rawData[0]};
+  if (socVal <= rawData[rawData.length-1].soc) return {...rawData[rawData.length-1]};
+  for (let i = 0; i < rawData.length - 1; i++) {
+    const a = rawData[i], b = rawData[i+1];
+    if (socVal <= a.soc && socVal >= b.soc) {
+      const t = (socVal - a.soc) / (b.soc - a.soc);
+      return {
+        v: a.v + t * (b.v - a.v),
+        soc: socVal,
+        cap: a.cap + t * (b.cap - a.cap),
+      };
+    }
+  }
+}
+
 // Tab state
-let currentTab = 'total'; // 'total' or 'cell'
+let currentTab = 'total'; // 'total' | 'cell' | 'soc'
 
 function switchTab(tab) {
   currentTab = tab;
@@ -704,60 +796,105 @@ function switchTab(tab) {
   const hint = document.getElementById('inputHint');
   const unit = document.getElementById('inputUnit');
   const input = document.getElementById('voltInput');
-  const btnTotal = document.getElementById('tabTotal');
-  const btnCell = document.getElementById('tabCell');
 
+  ['tabTotal','tabCell','tabSoc'].forEach(id => document.getElementById(id).classList.remove('active'));
+  switcher.classList.remove('tab-cell','tab-soc');
   input.value = '';
   document.getElementById('errorMsg').textContent = '';
 
   if (tab === 'total') {
-    switcher.classList.remove('tab-cell');
-    btnTotal.classList.add('active');
-    btnCell.classList.remove('active');
+    document.getElementById('tabTotal').classList.add('active');
     input.placeholder = '如 46.80';
     input.step = '0.01';
     hint.textContent = '范围：36.4 ~ 54.6 V（13串总电压）';
     unit.textContent = 'V';
-  } else {
+    document.getElementById('socSliderWrap').classList.remove('visible');
+  } else if (tab === 'cell') {
     switcher.classList.add('tab-cell');
-    btnCell.classList.add('active');
-    btnTotal.classList.remove('active');
+    document.getElementById('tabCell').classList.add('active');
     input.placeholder = '如 3.600';
     input.step = '0.001';
     hint.textContent = '范围：2.8 ~ 4.2 V（单节电芯电压）';
     unit.textContent = 'V';
+    document.getElementById('socSliderWrap').classList.remove('visible');
+  } else {
+    switcher.classList.add('tab-soc');
+    document.getElementById('tabSoc').classList.add('active');
+    input.placeholder = '如 75';
+    input.step = '0.1';
+    hint.textContent = '范围：0 ~ 100（荷电状态百分比）';
+    unit.textContent = '%';
+    document.getElementById('socSliderWrap').classList.add('visible');
   }
   input.focus();
 }
 
-function calculate() {
-  const errEl = document.getElementById('errorMsg');
-  errEl.textContent = '';
+// SOC slider logic
+function initSlider() {
+  const track = document.getElementById('sliderTrack');
+  const thumb = document.getElementById('sliderThumb');
+  const fill  = document.getElementById('sliderFill');
+  const input = document.getElementById('voltInput');
 
-  const raw = parseFloat(document.getElementById('voltInput').value);
-  if (isNaN(raw)) {
-    errEl.textContent = '请输入电压值';
-    return;
+  function setSliderValue(pct) {
+    pct = Math.max(0, Math.min(100, pct));
+    fill.style.width = pct + '%';
+    thumb.style.left = pct + '%';
+    input.value = pct.toFixed(1);
+    // live calculate
+    const r = interpolateBySoc(pct / 100);
+    updateDisplay(r.v, pct, capToRange(r.cap));
   }
 
-  let cellV, totalV;
-  if (currentTab === 'total') {
-    totalV = raw;
-    cellV = raw / S;
-  } else {
-    cellV = raw;
-    totalV = raw * S;
+  function getPctFromEvent(e) {
+    const rect = track.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    return ((clientX - rect.left) / rect.width) * 100;
   }
 
-  if (cellV < 2.8 || cellV > 4.25) {
-    errEl.textContent = `单体电压 ${cellV.toFixed(3)}V 超出范围 [2.8V ~ 4.2V]`;
-    return;
-  }
+  let dragging = false;
 
-  const r = interpolate(cellV);
-  const soc = r.soc * 100;
-  const range = capToRange(r.cap);
+  thumb.addEventListener('mousedown', e => { dragging = true; e.preventDefault(); });
+  track.addEventListener('mousedown', e => {
+    dragging = true;
+    setSliderValue(getPctFromEvent(e));
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => { if (dragging) setSliderValue(getPctFromEvent(e)); });
+  document.addEventListener('mouseup', () => { dragging = false; });
 
+  // Touch support
+  thumb.addEventListener('touchstart', e => { dragging = true; e.preventDefault(); }, {passive:false});
+  track.addEventListener('touchstart', e => {
+    dragging = true;
+    setSliderValue(getPctFromEvent(e));
+  }, {passive:true});
+  document.addEventListener('touchmove', e => {
+    if (dragging) { setSliderValue(getPctFromEvent(e)); e.preventDefault(); }
+  }, {passive:false});
+  document.addEventListener('touchend', () => { dragging = false; });
+
+  // Sync text input → slider
+  input.addEventListener('input', function() {
+    if (currentTab !== 'soc') return;
+    const v = parseFloat(this.value);
+    if (!isNaN(v)) {
+      fill.style.width = Math.max(0,Math.min(100,v)) + '%';
+      thumb.style.left = Math.max(0,Math.min(100,v)) + '%';
+    }
+  });
+}
+
+// Sync slider to a given SOC value from outside
+function syncSlider(pct) {
+  const fill  = document.getElementById('sliderFill');
+  const thumb = document.getElementById('sliderThumb');
+  pct = Math.max(0, Math.min(100, pct));
+  fill.style.width = pct + '%';
+  thumb.style.left = pct + '%';
+}
+
+function updateDisplay(cellV, soc, range) {
   document.getElementById('v-soc').textContent = soc.toFixed(1);
   document.getElementById('v-range').textContent = range.toFixed(1);
   document.getElementById('v-cell').textContent = cellV.toFixed(3);
@@ -767,7 +904,6 @@ function calculate() {
     document.getElementById(id).classList.add('active');
   });
 
-  // Battery animation
   const fill = document.getElementById('battFill');
   const battText = document.getElementById('battText');
   const bolts = document.getElementById('battBolts');
@@ -775,21 +911,55 @@ function calculate() {
   fill.className = 'battery-fill';
   if (soc < 20) fill.classList.add('low');
   else if (soc < 50) fill.classList.add('mid');
-
   fill.style.width = Math.max(soc, 2) + '%';
   battText.textContent = soc.toFixed(0) + '%';
-
-  // Show bolts when high SOC
   if (soc > 80) bolts.classList.add('show');
   else bolts.classList.remove('show');
 
   addMarkerToChart(cellV);
 }
 
+function calculate() {
+  const errEl = document.getElementById('errorMsg');
+  errEl.textContent = '';
+
+  const raw = parseFloat(document.getElementById('voltInput').value);
+  if (isNaN(raw)) {
+    errEl.textContent = '请输入数值';
+    return;
+  }
+
+  if (currentTab === 'soc') {
+    if (raw < 0 || raw > 100) {
+      errEl.textContent = 'SOC 范围：0 ~ 100%';
+      return;
+    }
+    const r = interpolateBySoc(raw / 100);
+    syncSlider(raw);
+    updateDisplay(r.v, raw, capToRange(r.cap));
+  } else {
+    let cellV;
+    if (currentTab === 'total') {
+      cellV = raw / S;
+    } else {
+      cellV = raw;
+    }
+    if (cellV < 2.8 || cellV > 4.25) {
+      errEl.textContent = `单体电压 ${cellV.toFixed(3)}V 超出范围 [2.8V ~ 4.2V]`;
+      return;
+    }
+    const r = interpolate(cellV);
+    updateDisplay(cellV, r.soc * 100, capToRange(r.cap));
+  }
+}
+
 // Allow Enter key
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter') calculate();
 });
+
+// Init slider on page load
+initSlider();
 </script>
 <script>
   if ('serviceWorker' in navigator) {
