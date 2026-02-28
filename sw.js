@@ -17,15 +17,12 @@ const CDN_ASSETS = [
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-      // Cache local assets
       cache.addAll(ASSETS).catch(e => console.log('Local cache error', e));
-      // Cache CDN assets (best effort)
       CDN_ASSETS.forEach(url => {
         cache.add(url).catch(e => console.log('CDN cache skip:', url));
       });
-    })
+    }).then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', event => {
