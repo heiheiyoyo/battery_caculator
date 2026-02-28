@@ -490,6 +490,30 @@
     min-height: 18px;
   }
 
+  .range-sub {
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .range-sub-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: var(--muted);
+    border-top: 1px solid rgba(30,58,95,0.5);
+    padding-top: 3px;
+  }
+
+  .range-sub-item span {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 12px;
+    color: var(--accent2);
+    opacity: 0.75;
+  }
+
   .pulse-ring {
     position: absolute;
     inset: -3px;
@@ -518,7 +542,7 @@
     <div class="spec-tag">放电截止 <span>36.4V</span></div>
     <div class="spec-tag">单体满电 <span>4.2V</span></div>
     <div class="spec-tag">单体截止 <span>2.8V</span></div>
-    <div class="spec-tag">满速续航 <span>≈55km</span></div>
+    <div class="spec-tag">城市续航 <span>≈55km</span></div><div class="spec-tag">平均续航 <span>≈70km</span></div><div class="spec-tag">巡航续航 <span>≈90km</span></div>
   </div>
 
   <div class="main-grid">
@@ -580,9 +604,13 @@
             <div class="result-unit">%</div>
           </div>
           <div class="result-item" id="r-range">
-            <div class="result-label">剩余续航</div>
+            <div class="result-label">城市剩余续航</div>
             <div class="result-value green" id="v-range">--</div>
             <div class="result-unit">km</div>
+            <div class="range-sub">
+              <div class="range-sub-item">平均续航 <span id="v-range-avg">--</span> km</div>
+              <div class="range-sub-item">巡航续航 <span id="v-range-cruise">--</span> km</div>
+            </div>
           </div>
           <div class="result-item" id="r-cell">
             <div class="result-label">单体电压</div>
@@ -600,7 +628,7 @@
 
     <!-- Right Panel: Chart -->
     <div class="card chart-card">
-      <div class="section-label">电压 · SOC · 剩余续航 曲线</div>
+      <div class="section-label">电压 · SOC · 城市续航 曲线</div>
       <div class="chart-container">
         <canvas id="myChart"></canvas>
       </div>
@@ -632,7 +660,10 @@ const rawData = [
   {v: 2.82, soc: 0,        cap:    0},
 ];
 
-const TOTAL_RANGE = 55;     // km
+const RANGE_CITY   = 55;    // km 城市续航（满速）
+const RANGE_AVG    = 70;    // km 平均续航
+const RANGE_CRUISE = 90;    // km 巡航续航
+const TOTAL_RANGE  = RANGE_CITY; // default alias
 const MAX_CAP = 4817;       // mAh
 const S = 13;               // series
 const CELL_MIN = 2.8;
@@ -689,7 +720,7 @@ const myChart = new Chart(ctx, {
         tension: 0.4,
       },
       {
-        label: '剩余续航 (km)',
+        label: '城市续航 (km)',
         data: chartRange,
         yAxisID: 'y2',
         borderColor: '#39ff8f',
@@ -895,8 +926,14 @@ function syncSlider(pct) {
 }
 
 function updateDisplay(cellV, soc, range) {
+  const cap = range / RANGE_CITY * MAX_CAP;
+  const rangeAvg    = (cap / MAX_CAP * RANGE_AVG).toFixed(1);
+  const rangeCruise = (cap / MAX_CAP * RANGE_CRUISE).toFixed(1);
+
   document.getElementById('v-soc').textContent = soc.toFixed(1);
   document.getElementById('v-range').textContent = range.toFixed(1);
+  document.getElementById('v-range-avg').textContent = rangeAvg;
+  document.getElementById('v-range-cruise').textContent = rangeCruise;
   document.getElementById('v-cell').textContent = cellV.toFixed(3);
   document.getElementById('v-total').textContent = (cellV * S).toFixed(2);
 
