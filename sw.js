@@ -1,4 +1,4 @@
-const CACHE_NAME = 'battery-calc-v1';
+const CACHE_NAME = 'battery-calc-v2';
 const BASE = '/battery_caculator';
 const ASSETS = [
   BASE + '/',
